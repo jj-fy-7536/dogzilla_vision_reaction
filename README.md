@@ -9,6 +9,11 @@
 
 默认是 dry-run，只打印将要执行的动作，不会真的控制机器狗。只有加 `--live` 才会调用机器狗接口。
 
+参考资料：
+
+- Yahboom DOGZILLA-Lite 学习页：https://www.yahboom.com/study/DOGZILLA-Lite
+- Yahboom DOGZILLA-Lite 官方资料仓库：https://github.com/YahboomTechnology/DOGZILLA-Lite
+
 ## 1. 本机验证
 
 安装依赖：
@@ -45,6 +50,14 @@ dry-run 检测并模拟下蹲：
 python3 -m dogzilla_vision_reaction.cli image \
   --image demo/red_target.png \
   --action crouch
+```
+
+官网基础功能 dry-run 验收：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli hardware motion --speed 7 --seconds 0.1 --include-lateral
+python3 -m dogzilla_vision_reaction.cli hardware audio --frequency 660 --seconds 0.1
+python3 -m dogzilla_vision_reaction.cli hardware stream --robot-ip 192.168.137.252 --port 8000
 ```
 
 ## 2. 机器狗上测试
@@ -84,6 +97,74 @@ python3 -m dogzilla_vision_reaction.cli camera \
 
 如果下蹲报接口不支持，先保留 `forward` 动作做展示，之后再根据机器狗本机示例代码里的姿态函数补准确接口。
 
+### 2.1 基础硬件验收
+
+这些命令对应官网里的基础能力：运动控制、播放声音、摄像头视频/图传。建议先 dry-run，再 live。
+
+运动测试，先前进再后退：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli hardware motion \
+  --live \
+  --speed 8 \
+  --seconds 0.4
+```
+
+运动测试，增加左右平移：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli hardware motion \
+  --live \
+  --speed 8 \
+  --seconds 0.4 \
+  --include-lateral
+```
+
+发出一个短音：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli hardware audio \
+  --live \
+  --frequency 880 \
+  --seconds 0.35
+```
+
+如果机器狗上没有默认播放器，可以指定 `aplay`：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli hardware audio \
+  --live \
+  --player-command aplay \
+  --frequency 880 \
+  --seconds 0.35
+```
+
+把摄像头视频直播到电脑浏览器：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli hardware stream \
+  --live \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --robot-ip 192.168.137.252
+```
+
+然后在电脑浏览器打开输出里的 `computer_url`，例如：
+
+```text
+http://192.168.137.252:8000
+```
+
+如果你还没确认摄像头环境，可以先在电脑上跑测试图案流：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli hardware stream \
+  --live \
+  --test-pattern \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
 ## 3. 参数说明
 
 - `--min-area-ratio`: 红色区域至少占画面的比例，默认 `0.01`。误检多就调大。
@@ -92,6 +173,8 @@ python3 -m dogzilla_vision_reaction.cli camera \
 - `--live`: 真正控制机器狗。没有这个参数只做 dry-run。
 - `--forward-speed`: 向前速度，默认 `8`，建议第一次别调太大。
 - `--seconds`: 动作持续时间，默认 `0.5` 秒。
+- `hardware motion --speed`: 基础运动测试速度，默认 `8`。
+- `hardware stream --robot-ip`: 机器狗 IP，只用于生成电脑浏览器打开的 URL。
 
 ## 4. 安全建议
 

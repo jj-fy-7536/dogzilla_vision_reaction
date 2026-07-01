@@ -4,6 +4,11 @@ from pathlib import Path
 
 from PIL import Image
 
+from dogzilla_vision_reaction.hardware_checks import (
+    DryRunAudioPlayer,
+    build_stream_urls,
+    run_motion_check,
+)
 from dogzilla_vision_reaction.red_detector import RedTargetDetector
 from dogzilla_vision_reaction.reaction_policy import ReactionConfig, choose_reaction
 from dogzilla_vision_reaction.robot import DryRunRobot
@@ -74,6 +79,7 @@ class VisionReactionTests(unittest.TestCase):
         robot = DryRunRobot()
 
         robot.forward(speed=12, seconds=0.1)
+        robot.backward(speed=9, seconds=0.2)
         robot.crouch(height_delta=18, seconds=0.1)
         robot.stop()
 
@@ -81,10 +87,56 @@ class VisionReactionTests(unittest.TestCase):
             robot.events,
             [
                 {"action": "forward", "speed": 12, "seconds": 0.1},
+                {"action": "backward", "speed": 9, "seconds": 0.2},
                 {"action": "crouch", "height_delta": 18, "seconds": 0.1},
                 {"action": "stop"},
             ],
         )
+
+    def test_motion_check_runs_forward_and_backward(self):
+        robot = DryRunRobot()
+
+        result = run_motion_check(robot, speed=7, seconds=0.1, include_lateral=False)
+
+        self.assertEqual(result.name, "motion")
+        self.assertEqual(
+            robot.events,
+            [
+                {"action": "forward", "speed": 7, "seconds": 0.1},
+                {"action": "backward", "speed": 7, "seconds": 0.1},
+                {"action": "stop"},
+            ],
+        )
+
+    def test_motion_check_can_include_left_and_right(self):
+        robot = DryRunRobot()
+
+        run_motion_check(robot, speed=6, seconds=0.1, include_lateral=True)
+
+        self.assertEqual(
+            robot.events,
+            [
+                {"action": "forward", "speed": 6, "seconds": 0.1},
+                {"action": "backward", "speed": 6, "seconds": 0.1},
+                {"action": "left", "speed": 6, "seconds": 0.1},
+                {"action": "right", "speed": 6, "seconds": 0.1},
+                {"action": "stop"},
+            ],
+        )
+
+    def test_dry_run_audio_records_tone(self):
+        player = DryRunAudioPlayer()
+
+        result = player.play_tone(frequency_hz=880, seconds=0.25)
+
+        self.assertEqual(result, {"action": "tone", "frequency_hz": 880, "seconds": 0.25})
+        self.assertEqual(player.events, [result])
+
+    def test_stream_urls_use_robot_ip_for_computer_url(self):
+        urls = build_stream_urls(host="0.0.0.0", port=8000, robot_ip="192.168.137.252")
+
+        self.assertEqual(urls["bind_url"], "http://0.0.0.0:8000")
+        self.assertEqual(urls["computer_url"], "http://192.168.137.252:8000")
 
 
 if __name__ == "__main__":

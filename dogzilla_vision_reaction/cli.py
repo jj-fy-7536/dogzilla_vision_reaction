@@ -8,6 +8,16 @@ import time
 from pathlib import Path
 
 from .annotate import annotate_image
+from .hardware_checks import (
+    SyntheticFrameProvider,
+    build_stream_urls,
+    dumps_result,
+    make_audio_player,
+    make_robot,
+    run_audio_check,
+    run_motion_check,
+    serve_mjpeg_stream,
+)
 from .reaction_policy import ReactionConfig, choose_reaction
 from .red_detector import RedTargetDetector
 from .robot import DogzillaRobot, DryRunRobot
@@ -22,6 +32,56 @@ def run_camera(args: argparse.Namespace) -> int:
     capture_path.parent.mkdir(parents=True, exist_ok=True)
     capture_camera_frame(capture_path, warmup_seconds=args.camera_warmup)
     return analyze_and_react(capture_path, args)
+
+
+def run_hardware_motion(args: argparse.Namespace) -> int:
+    robot = make_robot(live=args.live, crouch_action_id=args.crouch_action_id)
+    install_sigint_stop(robot)
+    result = run_motion_check(
+        robot,
+        speed=args.speed,
+        seconds=args.seconds,
+        include_lateral=args.include_lateral,
+    )
+    print(dumps_result(result))
+    return 0
+
+
+def run_hardware_audio(args: argparse.Namespace) -> int:
+    player = make_audio_player(live=args.live, player_command=args.player_command)
+    result = run_audio_check(
+        player,
+        frequency_hz=args.frequency,
+        seconds=args.seconds,
+        audio_file=args.audio_file,
+    )
+    print(dumps_result(result))
+    return 0
+
+
+def run_hardware_stream(args: argparse.Namespace) -> int:
+    urls = build_stream_urls(host=args.host, port=args.port, robot_ip=args.robot_ip)
+    payload = {
+        "name": "stream",
+        "mode": "live" if args.live else "dry-run",
+        "urls": urls,
+        "stream_path": "/stream.mjpg",
+        "message": "open computer_url in a browser on your computer",
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
+
+    if not args.live:
+        return 0
+
+    provider_factory = SyntheticFrameProvider if args.test_pattern else None
+    try:
+        if provider_factory is None:
+            serve_mjpeg_stream(host=args.host, port=args.port, fps=args.fps)
+        else:
+            serve_mjpeg_stream(host=args.host, port=args.port, provider_factory=provider_factory, fps=args.fps)
+    except KeyboardInterrupt:
+        return 0
+    return 0
 
 
 def analyze_and_react(image_path: Path, args: argparse.Namespace) -> int:
@@ -133,6 +193,34 @@ def build_parser() -> argparse.ArgumentParser:
     camera.add_argument("--camera-warmup", type=float, default=1.0)
     add_common_args(camera)
     camera.set_defaults(func=run_camera)
+
+    hardware = subparsers.add_parser("hardware", help="run basic DOGZILLA-LITE hardware checks")
+    hardware_subparsers = hardware.add_subparsers(dest="hardware_command", required=True)
+
+    motion = hardware_subparsers.add_parser("motion", help="check forward/backward movement")
+    motion.add_argument("--live", action="store_true", help="control the real robot instead of dry-run")
+    motion.add_argument("--speed", type=int, default=8)
+    motion.add_argument("--seconds", type=float, default=0.4)
+    motion.add_argument("--include-lateral", action="store_true", help="also test left and right movement")
+    motion.add_argument("--crouch-action-id", type=int)
+    motion.set_defaults(func=run_hardware_motion)
+
+    audio = hardware_subparsers.add_parser("audio", help="check speaker/audio output")
+    audio.add_argument("--live", action="store_true", help="play through the robot/computer audio device")
+    audio.add_argument("--frequency", type=int, default=880)
+    audio.add_argument("--seconds", type=float, default=0.35)
+    audio.add_argument("--audio-file", type=Path)
+    audio.add_argument("--player-command", help="force a player command, such as aplay or ffplay")
+    audio.set_defaults(func=run_hardware_audio)
+
+    stream = hardware_subparsers.add_parser("stream", help="serve camera video to a computer browser")
+    stream.add_argument("--live", action="store_true", help="start the HTTP MJPEG server")
+    stream.add_argument("--host", default="0.0.0.0")
+    stream.add_argument("--port", type=int, default=8000)
+    stream.add_argument("--robot-ip", help="robot IP address shown in the computer URL")
+    stream.add_argument("--fps", type=float, default=8.0)
+    stream.add_argument("--test-pattern", action="store_true", help="stream a synthetic test image instead of Picamera2")
+    stream.set_defaults(func=run_hardware_stream)
 
     return parser
 

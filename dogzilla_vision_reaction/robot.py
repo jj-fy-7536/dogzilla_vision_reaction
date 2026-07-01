@@ -14,6 +14,15 @@ class DryRunRobot:
     def forward(self, speed: int = 8, seconds: float = 0.5) -> None:
         self.events.append({"action": "forward", "speed": speed, "seconds": seconds})
 
+    def backward(self, speed: int = 8, seconds: float = 0.5) -> None:
+        self.events.append({"action": "backward", "speed": speed, "seconds": seconds})
+
+    def left(self, speed: int = 8, seconds: float = 0.5) -> None:
+        self.events.append({"action": "left", "speed": speed, "seconds": seconds})
+
+    def right(self, speed: int = 8, seconds: float = 0.5) -> None:
+        self.events.append({"action": "right", "speed": speed, "seconds": seconds})
+
     def crouch(self, height_delta: int = 15, seconds: float = 0.5) -> None:
         self.events.append({"action": "crouch", "height_delta": height_delta, "seconds": seconds})
 
@@ -34,10 +43,22 @@ class DogzillaRobot:
         self.events: list[dict[str, object]] = []
 
     def forward(self, speed: int = 8, seconds: float = 0.5) -> None:
+        self._move_for(axis="x", value=abs(speed), action="forward", speed=speed, seconds=seconds)
+
+    def backward(self, speed: int = 8, seconds: float = 0.5) -> None:
+        self._move_for(axis="x", value=-abs(speed), action="backward", speed=speed, seconds=seconds)
+
+    def left(self, speed: int = 8, seconds: float = 0.5) -> None:
+        self._move_for(axis="y", value=abs(speed), action="left", speed=speed, seconds=seconds)
+
+    def right(self, speed: int = 8, seconds: float = 0.5) -> None:
+        self._move_for(axis="y", value=-abs(speed), action="right", speed=speed, seconds=seconds)
+
+    def _move_for(self, axis: str, value: int, action: str, speed: int, seconds: float) -> None:
         self._call_if_exists("gait_type", "trot")
         self._call_if_exists("pace", "slow")
-        self._require_call("move", "x", speed)
-        self.events.append({"action": "forward", "speed": speed, "seconds": seconds})
+        self._require_call("move", axis, value)
+        self.events.append({"action": action, "speed": speed, "seconds": seconds})
         time.sleep(seconds)
         self.stop()
 
