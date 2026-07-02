@@ -26,6 +26,27 @@ class DryRunRobot:
     def crouch(self, height_delta: int = 15, seconds: float = 0.5) -> None:
         self.events.append({"action": "crouch", "height_delta": height_delta, "seconds": seconds})
 
+    def grab(
+        self,
+        open_claw: int = 5,
+        close_claw: int = 245,
+        reach_radius: int = 200,
+        reach_height: int = 130,
+        lift_radius: int = 90,
+        lift_height: int = 100,
+    ) -> None:
+        self.events.append(
+            {
+                "action": "grab",
+                "open_claw": open_claw,
+                "close_claw": close_claw,
+                "reach_radius": reach_radius,
+                "reach_height": reach_height,
+                "lift_radius": lift_radius,
+                "lift_height": lift_height,
+            }
+        )
+
     def stop(self) -> None:
         self.events.append({"action": "stop"})
 
@@ -88,6 +109,36 @@ class DogzillaRobot:
             "Use --action forward first, or pass --crouch-action-id after checking the robot demos."
         )
 
+    def grab(
+        self,
+        open_claw: int = 5,
+        close_claw: int = 245,
+        reach_radius: int = 200,
+        reach_height: int = 130,
+        lift_radius: int = 90,
+        lift_height: int = 100,
+    ) -> None:
+        self._require_call("translation", "z", 10)
+        self._require_call("attitude", "p", 15)
+        self._require_call("claw", open_claw)
+        time.sleep(1.0)
+        self._require_call("arm_polar", reach_radius, reach_height)
+        time.sleep(2.0)
+        self._require_call("claw", close_claw)
+        time.sleep(1.0)
+        self._require_call("arm_polar", lift_radius, lift_height)
+        self.events.append(
+            {
+                "action": "grab",
+                "open_claw": open_claw,
+                "close_claw": close_claw,
+                "reach_radius": reach_radius,
+                "reach_height": reach_height,
+                "lift_radius": lift_radius,
+                "lift_height": lift_height,
+            }
+        )
+
     def stop(self) -> None:
         if hasattr(self.dog, "move"):
             self.dog.move("x", 0)
@@ -128,6 +179,13 @@ def load_default_dog() -> Any:
             return dog_class()
         except Exception as exc:  # pragma: no cover - depends on robot image
             errors.append(f"{module_name}.{class_name}: {exc}")
+
+    try:
+        module = importlib.import_module("xgolib")
+        dog_class = getattr(module, "XGO")
+        return dog_class(port="/dev/ttyAMA0", version="xgolite")
+    except Exception as exc:  # pragma: no cover - depends on robot image
+        errors.append(f"xgolib.XGO: {exc}")
 
     detail = "; ".join(errors)
     raise RuntimeError(f"Could not load DOGZILLA robot library. Tried: {detail}")

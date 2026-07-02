@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -11,7 +13,7 @@ from dogzilla_vision_reaction.hardware_checks import (
 )
 from dogzilla_vision_reaction.red_detector import RedTargetDetector
 from dogzilla_vision_reaction.reaction_policy import ReactionConfig, choose_reaction
-from dogzilla_vision_reaction.robot import DryRunRobot
+from dogzilla_vision_reaction.robot import DryRunRobot, load_default_dog
 from dogzilla_vision_reaction.types import BoundingBox, Detection
 
 
@@ -62,6 +64,20 @@ class VisionReactionTests(unittest.TestCase):
         self.assertEqual(result.reason, "target_detected")
         self.assertEqual(result.detection, detection)
 
+    def test_policy_can_trigger_grab_action(self):
+        detection = Detection(
+            label="red_target",
+            confidence=0.72,
+            bbox=BoundingBox(307, 343, 45, 61),
+            area_ratio=0.0069,
+            image_path="camera_ball.jpg",
+        )
+
+        result = choose_reaction([detection], ReactionConfig(action="grab"))
+
+        self.assertEqual(result.action, "grab")
+        self.assertEqual(result.reason, "target_detected")
+
     def test_policy_default_threshold_triggers_small_camera_target(self):
         detection = Detection(
             label="red_target",
@@ -110,6 +126,7 @@ class VisionReactionTests(unittest.TestCase):
         robot.forward(speed=12, seconds=0.1)
         robot.backward(speed=9, seconds=0.2)
         robot.crouch(height_delta=18, seconds=0.1)
+        robot.grab(open_claw=5, close_claw=245, reach_radius=200, reach_height=130, lift_radius=90, lift_height=100)
         robot.stop()
 
         self.assertEqual(
@@ -118,9 +135,36 @@ class VisionReactionTests(unittest.TestCase):
                 {"action": "forward", "speed": 12, "seconds": 0.1},
                 {"action": "backward", "speed": 9, "seconds": 0.2},
                 {"action": "crouch", "height_delta": 18, "seconds": 0.1},
+                {
+                    "action": "grab",
+                    "open_claw": 5,
+                    "close_claw": 245,
+                    "reach_radius": 200,
+                    "reach_height": 130,
+                    "lift_radius": 90,
+                    "lift_height": 100,
+                },
                 {"action": "stop"},
             ],
         )
+
+    def test_load_default_dog_falls_back_to_xgolib(self):
+        created: list[dict[str, object]] = []
+
+        class FakeXGO:
+            def __init__(self, port: str, version: str) -> None:
+                created.append({"port": port, "version": version})
+
+        def fake_import(name: str):
+            if name == "xgolib":
+                return SimpleNamespace(XGO=FakeXGO)
+            raise ImportError(name)
+
+        with patch("dogzilla_vision_reaction.robot.importlib.import_module", side_effect=fake_import):
+            dog = load_default_dog()
+
+        self.assertIsInstance(dog, FakeXGO)
+        self.assertEqual(created, [{"port": "/dev/ttyAMA0", "version": "xgolite"}])
 
     def test_motion_check_runs_forward_and_backward(self):
         robot = DryRunRobot()

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from .types import Detection, ReactionResult
 
 
-VALID_ACTIONS = {"forward", "crouch"}
+VALID_ACTIONS = {"forward", "crouch", "grab"}
 
 
 @dataclass(frozen=True)

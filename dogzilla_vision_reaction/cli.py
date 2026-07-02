@@ -139,6 +139,15 @@ def execute_reaction(robot: DryRunRobot | DogzillaRobot, action: str, args: argp
         robot.forward(speed=args.forward_speed, seconds=args.seconds)
     elif action == "crouch":
         robot.crouch(height_delta=args.crouch_height, seconds=args.seconds)
+    elif action == "grab":
+        robot.grab(
+            open_claw=args.grab_open_claw,
+            close_claw=args.grab_close_claw,
+            reach_radius=args.grab_reach_radius,
+            reach_height=args.grab_reach_height,
+            lift_radius=args.grab_lift_radius,
+            lift_height=args.grab_lift_height,
+        )
 
 
 def install_sigint_stop(robot: DryRunRobot | DogzillaRobot) -> None:
@@ -172,7 +181,7 @@ def capture_camera_frame(output_path: Path, warmup_seconds: float = 1.0) -> None
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--action", choices=("forward", "crouch"), default="forward")
+    parser.add_argument("--action", choices=("forward", "crouch", "grab"), default="forward")
     parser.add_argument("--min-area-ratio", type=float, default=0.003)
     parser.add_argument("--confidence-threshold", type=float, default=0.30)
     parser.add_argument("--min-red", type=int, default=100)
@@ -183,6 +192,12 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--seconds", type=float, default=0.5)
     parser.add_argument("--crouch-height", type=int, default=15)
     parser.add_argument("--crouch-action-id", type=int)
+    parser.add_argument("--grab-open-claw", type=int, default=5)
+    parser.add_argument("--grab-close-claw", type=int, default=245)
+    parser.add_argument("--grab-reach-radius", type=int, default=200)
+    parser.add_argument("--grab-reach-height", type=int, default=130)
+    parser.add_argument("--grab-lift-radius", type=int, default=90)
+    parser.add_argument("--grab-lift-height", type=int, default=100)
     parser.add_argument("--annotated", type=Path)
     parser.add_argument("--json", type=Path)
 

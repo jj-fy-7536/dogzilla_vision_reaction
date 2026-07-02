@@ -6,6 +6,7 @@
 
 - `forward`: 看到红色目标后向前走一小段，然后自动停止。
 - `crouch`: 看到红色目标后尝试下蹲或降低机身高度。这个动作依赖机器狗本机 DOGZILLA 库是否暴露姿态接口，建议先 dry-run，再上机器狗测试。
+- `grab`: 看到红色目标后执行官方机械臂抓取序列，伸出机械臂并尝试夹取。
 
 默认是 dry-run，只打印将要执行的动作，不会真的控制机器狗。只有加 `--live` 才会调用机器狗接口。
 
@@ -52,6 +53,14 @@ python3 -m dogzilla_vision_reaction.cli image \
   --action crouch
 ```
 
+dry-run 检测并模拟机械臂抓取：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli image \
+  --image demo/red_target.png \
+  --action grab
+```
+
 官网基础功能 dry-run 验收：
 
 ```bash
@@ -96,6 +105,25 @@ python3 -m dogzilla_vision_reaction.cli camera \
 ```
 
 如果下蹲报接口不支持，先保留 `forward` 动作做展示，之后再根据机器狗本机示例代码里的姿态函数补准确接口。
+
+测试红球触发机械臂抓取，先 dry-run：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli camera \
+  --action grab \
+  --capture-output demo/red_ball_frame.jpg \
+  --annotated demo/red_ball_annotated.jpg
+```
+
+确认输出里 `reaction.action` 是 `grab` 后，再真实执行：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli camera \
+  --action grab \
+  --live \
+  --capture-output demo/red_ball_frame.jpg \
+  --annotated demo/red_ball_annotated.jpg
+```
 
 ### 2.1 基础硬件验收
 
@@ -172,7 +200,7 @@ python3 -m dogzilla_vision_reaction.cli hardware stream \
 - `--min-red`: 红色通道最低值，默认 `100`。环境偏暗时可调低。
 - `--dominance-delta`: 红色比绿色/蓝色至少高多少，默认 `25`。误检多就调高。
 - `--confidence-full-area-ratio`: 目标占画面多少时视为满置信度，默认 `0.02`。
-- `--action`: 触发动作，支持 `forward` 或 `crouch`。
+- `--action`: 触发动作，支持 `forward`、`crouch` 或 `grab`。
 - `--live`: 真正控制机器狗。没有这个参数只做 dry-run。
 - `--forward-speed`: 向前速度，默认 `8`，建议第一次别调太大。
 - `--seconds`: 动作持续时间，默认 `0.5` 秒。
