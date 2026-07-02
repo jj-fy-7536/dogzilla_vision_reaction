@@ -56,6 +56,8 @@ def run_camera_grab_approach(args: argparse.Namespace) -> int:
         center_tolerance_px=args.grab_center_tolerance,
         ready_area_ratio=args.grab_ready_area_ratio,
         too_close_area_ratio=args.grab_too_close_area_ratio,
+        ready_center_y_ratio=args.grab_ready_center_y_ratio,
+        center_y_tolerance_ratio=args.grab_center_y_tolerance_ratio,
     )
     steps: list[dict[str, object]] = []
     detections = []
@@ -64,9 +66,9 @@ def run_camera_grab_approach(args: argparse.Namespace) -> int:
     for step_index in range(args.grab_max_steps):
         capture_camera_frame(capture_path, warmup_seconds=args.camera_warmup if step_index == 0 else 0.2)
         detections = detector.detect(capture_path)
-        image_width, _ = read_image_size(capture_path)
+        image_width, image_height = read_image_size(capture_path)
         target = select_grab_target(detections, confidence_threshold=args.confidence_threshold)
-        decision = decide_grab_step(target, image_width=image_width, config=config)
+        decision = decide_grab_step(target, image_width=image_width, image_height=image_height, config=config)
         final_decision = decision
         step_payload = {
             "step": step_index + 1,
@@ -202,14 +204,17 @@ def analyze_and_react(image_path: Path, args: argparse.Namespace) -> int:
 
 def analyze_and_approach_grab(image_path: Path, detections: list[Detection], args: argparse.Namespace) -> int:
     target = select_grab_target(detections, confidence_threshold=args.confidence_threshold)
-    image_width, _ = read_image_size(image_path)
+    image_width, image_height = read_image_size(image_path)
     decision = decide_grab_step(
         target,
         image_width=image_width,
+        image_height=image_height,
         config=GrabApproachConfig(
             center_tolerance_px=args.grab_center_tolerance,
             ready_area_ratio=args.grab_ready_area_ratio,
             too_close_area_ratio=args.grab_too_close_area_ratio,
+            ready_center_y_ratio=args.grab_ready_center_y_ratio,
+            center_y_tolerance_ratio=args.grab_center_y_tolerance_ratio,
         ),
     )
 
@@ -348,13 +353,15 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     grab_approach_group.add_argument("--grab-approach", dest="grab_approach", action="store_true", default=True)
     grab_approach_group.add_argument("--no-grab-approach", dest="grab_approach", action="store_false")
     parser.add_argument("--grab-max-steps", type=int, default=12)
-    parser.add_argument("--grab-center-tolerance", type=int, default=45)
+    parser.add_argument("--grab-center-tolerance", type=int, default=35)
     parser.add_argument("--grab-ready-area-ratio", type=float, default=0.025)
     parser.add_argument("--grab-too-close-area-ratio", type=float, default=0.09)
-    parser.add_argument("--grab-approach-speed", type=int, default=6)
-    parser.add_argument("--grab-approach-seconds", type=float, default=0.3)
-    parser.add_argument("--grab-align-speed", type=int, default=5)
-    parser.add_argument("--grab-align-seconds", type=float, default=0.2)
+    parser.add_argument("--grab-ready-center-y-ratio", type=float, default=0.86)
+    parser.add_argument("--grab-center-y-tolerance-ratio", type=float, default=0.02)
+    parser.add_argument("--grab-approach-speed", type=int, default=10)
+    parser.add_argument("--grab-approach-seconds", type=float, default=1.0)
+    parser.add_argument("--grab-align-speed", type=int, default=6)
+    parser.add_argument("--grab-align-seconds", type=float, default=0.7)
     parser.add_argument("--annotated", type=Path)
     parser.add_argument("--json", type=Path)
 

@@ -89,40 +89,40 @@ class VisionReactionTests(unittest.TestCase):
         detection = Detection(
             label="red_target",
             confidence=0.65,
-            bbox=BoundingBox(300, 350, 45, 60),
+            bbox=BoundingBox(300, 320, 45, 60),
             area_ratio=0.008,
             image_path="camera_ball.jpg",
         )
 
-        decision = decide_grab_step(detection, image_width=640, config=GrabApproachConfig())
+        decision = decide_grab_step(detection, image_width=640, image_height=480, config=GrabApproachConfig())
 
         self.assertEqual(decision.action, "forward")
         self.assertEqual(decision.reason, "target_too_far")
 
-    def test_grab_approach_prioritizes_distance_before_alignment(self):
+    def test_grab_approach_backs_up_when_target_is_low_and_partly_clipped(self):
         detection = Detection(
             label="red_target",
             confidence=0.65,
-            bbox=BoundingBox(228, 366, 59, 93),
-            area_ratio=0.0126,
+            bbox=BoundingBox(226, 439, 82, 41),
+            area_ratio=0.00821,
             image_path="camera_ball.jpg",
         )
 
-        decision = decide_grab_step(detection, image_width=640, config=GrabApproachConfig())
+        decision = decide_grab_step(detection, image_width=640, image_height=480, config=GrabApproachConfig())
 
-        self.assertEqual(decision.action, "forward")
-        self.assertEqual(decision.reason, "target_too_far")
+        self.assertEqual(decision.action, "backward")
+        self.assertEqual(decision.reason, "target_too_close")
 
     def test_grab_approach_aligns_left_before_grabbing(self):
         detection = Detection(
             label="red_target",
             confidence=0.65,
-            bbox=BoundingBox(230, 360, 80, 95),
-            area_ratio=0.028,
+            bbox=BoundingBox(249, 367, 60, 89),
+            area_ratio=0.01319,
             image_path="camera_ball.jpg",
         )
 
-        decision = decide_grab_step(detection, image_width=640, config=GrabApproachConfig())
+        decision = decide_grab_step(detection, image_width=640, image_height=480, config=GrabApproachConfig())
 
         self.assertEqual(decision.action, "left")
         self.assertEqual(decision.reason, "target_left_of_center")
@@ -131,12 +131,12 @@ class VisionReactionTests(unittest.TestCase):
         detection = Detection(
             label="red_target",
             confidence=0.65,
-            bbox=BoundingBox(290, 360, 80, 95),
-            area_ratio=0.028,
+            bbox=BoundingBox(290, 367, 60, 89),
+            area_ratio=0.01319,
             image_path="camera_ball.jpg",
         )
 
-        decision = decide_grab_step(detection, image_width=640, config=GrabApproachConfig())
+        decision = decide_grab_step(detection, image_width=640, image_height=480, config=GrabApproachConfig())
 
         self.assertEqual(decision.action, "grab")
         self.assertEqual(decision.reason, "target_in_grab_range")
@@ -150,13 +150,13 @@ class VisionReactionTests(unittest.TestCase):
             image_path="camera_ball.jpg",
         )
 
-        decision = decide_grab_step(detection, image_width=640, config=GrabApproachConfig())
+        decision = decide_grab_step(detection, image_width=640, image_height=480, config=GrabApproachConfig())
 
         self.assertEqual(decision.action, "backward")
         self.assertEqual(decision.reason, "target_too_close")
 
     def test_grab_approach_stops_when_target_is_missing(self):
-        decision = decide_grab_step(None, image_width=640, config=GrabApproachConfig())
+        decision = decide_grab_step(None, image_width=640, image_height=480, config=GrabApproachConfig())
 
         self.assertEqual(decision.action, "stop")
         self.assertEqual(decision.reason, "target_not_found")
@@ -206,11 +206,11 @@ class VisionReactionTests(unittest.TestCase):
         detection = Detection(
             label="red_target",
             confidence=0.65,
-            bbox=BoundingBox(228, 366, 59, 93),
+            bbox=BoundingBox(300, 320, 45, 60),
             area_ratio=0.0126,
             image_path="camera_ball.jpg",
         )
-        decision = decide_grab_step(detection, image_width=640, config=GrabApproachConfig())
+        decision = decide_grab_step(detection, image_width=640, image_height=480, config=GrabApproachConfig())
 
         execute_grab_decision(
             robot,

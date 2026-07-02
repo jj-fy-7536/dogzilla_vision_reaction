@@ -30,9 +30,11 @@ class GrabRobot(Protocol):
 
 @dataclass(frozen=True)
 class GrabApproachConfig:
-    center_tolerance_px: int = 45
+    center_tolerance_px: int = 35
     ready_area_ratio: float = 0.025
     too_close_area_ratio: float = 0.09
+    ready_center_y_ratio: float = 0.86
+    center_y_tolerance_ratio: float = 0.02
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,8 @@ class GrabApproachDecision:
     action: str
     reason: str
     target_center_x: float | None = None
+    target_center_y: float | None = None
+    target_center_y_ratio: float | None = None
     target_area_ratio: float | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -47,6 +51,10 @@ class GrabApproachDecision:
             "action": self.action,
             "reason": self.reason,
             "target_center_x": round(self.target_center_x, 2) if self.target_center_x is not None else None,
+            "target_center_y": round(self.target_center_y, 2) if self.target_center_y is not None else None,
+            "target_center_y_ratio": (
+                round(self.target_center_y_ratio, 6) if self.target_center_y_ratio is not None else None
+            ),
             "target_area_ratio": round(self.target_area_ratio, 6) if self.target_area_ratio is not None else None,
         }
 
@@ -54,28 +62,37 @@ class GrabApproachDecision:
 def decide_grab_step(
     detection: Detection | None,
     image_width: int,
+    image_height: int,
     config: GrabApproachConfig,
 ) -> GrabApproachDecision:
     if detection is None or detection.bbox is None:
         return GrabApproachDecision(action="stop", reason="target_not_found")
 
     center_x = detection.bbox.x + detection.bbox.width / 2
+    center_y = detection.bbox.y + detection.bbox.height / 2
+    center_y_ratio = center_y / image_height
     image_center_x = image_width / 2
     area_ratio = detection.area_ratio
 
-    if area_ratio > config.too_close_area_ratio:
+    if area_ratio > config.too_close_area_ratio or center_y_ratio > (
+        config.ready_center_y_ratio + config.center_y_tolerance_ratio
+    ):
         return GrabApproachDecision(
             action="backward",
             reason="target_too_close",
             target_center_x=center_x,
+            target_center_y=center_y,
+            target_center_y_ratio=center_y_ratio,
             target_area_ratio=area_ratio,
         )
 
-    if area_ratio < config.ready_area_ratio:
+    if center_y_ratio < config.ready_center_y_ratio - config.center_y_tolerance_ratio:
         return GrabApproachDecision(
             action="forward",
             reason="target_too_far",
             target_center_x=center_x,
+            target_center_y=center_y,
+            target_center_y_ratio=center_y_ratio,
             target_area_ratio=area_ratio,
         )
 
@@ -84,6 +101,8 @@ def decide_grab_step(
             action="left",
             reason="target_left_of_center",
             target_center_x=center_x,
+            target_center_y=center_y,
+            target_center_y_ratio=center_y_ratio,
             target_area_ratio=area_ratio,
         )
 
@@ -92,6 +111,8 @@ def decide_grab_step(
             action="right",
             reason="target_right_of_center",
             target_center_x=center_x,
+            target_center_y=center_y,
+            target_center_y_ratio=center_y_ratio,
             target_area_ratio=area_ratio,
         )
 
@@ -99,6 +120,8 @@ def decide_grab_step(
         action="grab",
         reason="target_in_grab_range",
         target_center_x=center_x,
+        target_center_y=center_y,
+        target_center_y_ratio=center_y_ratio,
         target_area_ratio=area_ratio,
     )
 
