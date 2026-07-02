@@ -6,7 +6,7 @@
 
 - `forward`: 看到红色目标后向前走一小段，然后自动停止。
 - `crouch`: 看到红色目标后尝试下蹲或降低机身高度。这个动作依赖机器狗本机 DOGZILLA 库是否暴露姿态接口，建议先 dry-run，再上机器狗测试。
-- `grab`: 看到红色目标后执行官方机械臂抓取序列，伸出机械臂并尝试夹取。
+- `grab`: 识别红球后先视觉横向居中，再靠近到实测抓取距离，抓取前重新确认画面，最后用标定后的机械臂参数夹取。
 
 默认是 dry-run，只打印将要执行的动作，不会真的控制机器狗。只有加 `--live` 才会调用机器狗接口。
 
@@ -125,12 +125,15 @@ python3 -m dogzilla_vision_reaction.cli camera \
   --annotated demo/red_ball_annotated.jpg
 ```
 
-真实抓取默认会先做靠近/对齐，再执行机械臂抓取：
+真实抓取默认是一轮完整的“红球识别、移动、确认、抓取”：
 
 - 红球偏左或偏右：先小步横移对齐。
-- 红球中心在画面里偏高：先小步前进。
-- 红球中心过低或已经被画面底部截断：先小步后退。
-- 红球居中且足够近：执行 `grab` 机械臂动作。
+- 红球面积小于标定窗口：先小步前进。
+- 红球面积大于标定窗口，或已经被画面底部截断：先小步后退。
+- 每次移动后重新拍照判断；进入抓取窗口后还会再拍一帧确认。
+- 红球居中且面积在 `0.078 ± 0.008` 窗口内：执行机械臂抓取。
+
+当前实测抓取姿态会把机身高度设到 `translation(['z'], [75])`，低头到 `attitude(['p'], [15])`，机械臂最终落点使用 `motor([52, 53], [-12, 78])`。
 
 可以调这些参数：
 
@@ -139,9 +142,10 @@ python3 -m dogzilla_vision_reaction.cli camera \
   --action grab \
   --live \
   --grab-max-steps 12 \
-  --grab-ready-center-y-ratio 0.86 \
-  --grab-center-y-tolerance-ratio 0.02 \
+  --grab-ready-area-ratio 0.078 \
+  --grab-area-tolerance-ratio 0.008 \
   --grab-center-tolerance 35 \
+  --grab-confirm-frames 1 \
   --grab-approach-speed 10 \
   --grab-approach-seconds 1.0
 ```
@@ -223,10 +227,13 @@ python3 -m dogzilla_vision_reaction.cli hardware stream \
 - `--confidence-full-area-ratio`: 目标占画面多少时视为满置信度，默认 `0.02`。
 - `--grab-approach` / `--no-grab-approach`: 开启或关闭抓取前的自动靠近/对齐。默认开启。
 - `--grab-center-tolerance`: 红球中心允许偏离画面中心多少像素，默认 `35`。
-- `--grab-ready-center-y-ratio`: 抓取距离对应的红球纵向中心比例，默认 `0.86`。红球中心在这个位置附近时认为距离合适。
-- `--grab-center-y-tolerance-ratio`: 纵向距离容忍区间，默认 `0.02`。
-- `--grab-ready-area-ratio`: 保留的面积参考阈值，默认 `0.025`。
-- `--grab-too-close-area-ratio`: 红球占画面比例超过这个值时先后退，默认 `0.09`。
+- `--grab-ready-area-ratio`: 实测抓取距离对应的红球面积比例，默认 `0.078`。
+- `--grab-area-tolerance-ratio`: 抓取距离窗口的面积容忍范围，默认 `0.008`。
+- `--grab-too-close-area-ratio`: 红球占画面比例超过这个值时先后退，默认 `0.095`。
+- `--grab-confirm-frames`: 到达抓取窗口后，抓取前重新确认的帧数，默认 `1`。
+- `--grab-confirm-warmup`: 抓取前确认帧的相机等待时间，默认 `0.25` 秒。
+- `--grab-ready-center-y-ratio`: 兼容保留参数，默认 `0.86`。
+- `--grab-center-y-tolerance-ratio`: 兼容保留参数，默认 `0.02`。
 - `--grab-max-steps`: 抓取前最多靠近/对齐几步，默认 `12`。
 - `--action`: 触发动作，支持 `forward`、`crouch` 或 `grab`。
 - `--live`: 真正控制机器狗。没有这个参数只做 dry-run。

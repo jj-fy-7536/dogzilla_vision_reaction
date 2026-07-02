@@ -20,7 +20,7 @@ from dogzilla_vision_reaction.hardware_checks import (
 )
 from dogzilla_vision_reaction.red_detector import RedTargetDetector
 from dogzilla_vision_reaction.reaction_policy import ReactionConfig, choose_reaction
-from dogzilla_vision_reaction.robot import DryRunRobot, load_default_dog
+from dogzilla_vision_reaction.robot import DogzillaRobot, DryRunRobot, load_default_dog
 from dogzilla_vision_reaction.types import BoundingBox, Detection
 
 
@@ -132,7 +132,7 @@ class VisionReactionTests(unittest.TestCase):
             label="red_target",
             confidence=0.65,
             bbox=BoundingBox(290, 367, 60, 89),
-            area_ratio=0.01319,
+            area_ratio=0.078,
             image_path="camera_ball.jpg",
         )
 
@@ -271,7 +271,7 @@ class VisionReactionTests(unittest.TestCase):
         robot.forward(speed=12, seconds=0.1)
         robot.backward(speed=9, seconds=0.2)
         robot.crouch(height_delta=18, seconds=0.1)
-        robot.grab(open_claw=5, close_claw=245, reach_radius=200, reach_height=130, lift_radius=90, lift_height=100)
+        robot.grab(open_claw=0, close_claw=210, reach_radius=133, reach_height=-44, lift_radius=55, lift_height=100)
         robot.stop()
 
         self.assertEqual(
@@ -282,12 +282,18 @@ class VisionReactionTests(unittest.TestCase):
                 {"action": "crouch", "height_delta": 18, "seconds": 0.1},
                 {
                     "action": "grab",
-                    "open_claw": 5,
-                    "close_claw": 245,
-                    "reach_radius": 200,
-                    "reach_height": 130,
-                    "lift_radius": 90,
+                    "open_claw": 0,
+                    "close_claw": 210,
+                    "reach_radius": 133,
+                    "reach_height": -44,
+                    "lift_radius": 55,
                     "lift_height": 100,
+                    "body_height": 75,
+                    "body_pitch": 15,
+                    "motor_ready": (19, 6),
+                    "motor_grab": (-12, 78),
+                    "motor_lift": (20, -20),
+                    "motor_rest": (-13, -20),
                 },
                 {"action": "stop"},
             ],
@@ -310,6 +316,71 @@ class VisionReactionTests(unittest.TestCase):
 
         self.assertIsInstance(dog, FakeXGO)
         self.assertEqual(created, [{"port": "/dev/ttyAMA0", "version": "xgolite"}])
+
+    def test_live_grab_uses_calibrated_motor_sequence_when_available(self):
+        class FakeDog:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+            def translation(self, *args: object) -> None:
+                self.calls.append(("translation", args))
+
+            def attitude(self, *args: object) -> None:
+                self.calls.append(("attitude", args))
+
+            def pace(self, *args: object) -> None:
+                self.calls.append(("pace", args))
+
+            def claw(self, *args: object) -> None:
+                self.calls.append(("claw", args))
+
+            def motor(self, *args: object) -> None:
+                self.calls.append(("motor", args))
+
+        fake_dog = FakeDog()
+        robot = DogzillaRobot(dog=fake_dog)
+
+        with patch("dogzilla_vision_reaction.robot.time.sleep"):
+            robot.grab()
+
+        self.assertIn(("translation", (["z"], [75])), fake_dog.calls)
+        self.assertIn(("attitude", (["p"], [15])), fake_dog.calls)
+        self.assertIn(("claw", (0,)), fake_dog.calls)
+        self.assertIn(("motor", ([52, 53], [19, 6])), fake_dog.calls)
+        self.assertIn(("motor", ([52, 53], [-12, 78])), fake_dog.calls)
+        self.assertIn(("claw", (210,)), fake_dog.calls)
+        self.assertIn(("motor", ([52, 53], [20, -20])), fake_dog.calls)
+        self.assertIn(("attitude", (["p"], [0])), fake_dog.calls)
+        self.assertIn(("motor", ([52, 53], [-13, -20])), fake_dog.calls)
+        self.assertTrue(robot.events[-1]["used_calibrated_motor"])
+
+    def test_live_grab_uses_arm_when_arm_polar_is_unavailable(self):
+        class FakeDog:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+            def translation(self, *args: object) -> None:
+                self.calls.append(("translation", args))
+
+            def attitude(self, *args: object) -> None:
+                self.calls.append(("attitude", args))
+
+            def claw(self, *args: object) -> None:
+                self.calls.append(("claw", args))
+
+            def arm(self, *args: object) -> None:
+                self.calls.append(("arm", args))
+
+        fake_dog = FakeDog()
+        robot = DogzillaRobot(dog=fake_dog)
+
+        with patch("dogzilla_vision_reaction.robot.time.sleep"):
+            robot.grab()
+
+        self.assertIn(("arm", (133, -44)), fake_dog.calls)
+        self.assertIn(("arm", (55, 100)), fake_dog.calls)
+        self.assertNotIn(("arm_polar", (133, -44)), fake_dog.calls)
+        self.assertFalse(robot.events[-1]["used_calibrated_motor"])
 
     def test_motion_check_runs_forward_and_backward(self):
         robot = DryRunRobot()

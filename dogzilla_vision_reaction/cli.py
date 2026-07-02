@@ -55,6 +55,7 @@ def run_camera_grab_approach(args: argparse.Namespace) -> int:
     config = GrabApproachConfig(
         center_tolerance_px=args.grab_center_tolerance,
         ready_area_ratio=args.grab_ready_area_ratio,
+        area_tolerance_ratio=args.grab_area_tolerance_ratio,
         too_close_area_ratio=args.grab_too_close_area_ratio,
         ready_center_y_ratio=args.grab_ready_center_y_ratio,
         center_y_tolerance_ratio=args.grab_center_y_tolerance_ratio,
@@ -78,8 +79,16 @@ def run_camera_grab_approach(args: argparse.Namespace) -> int:
         steps.append(step_payload)
 
         if decision.action == "grab":
-            execute_grab_decision_from_args(robot, decision, args)
-            break
+            confirmed_decision = confirm_grab_decision(capture_path, detector, args, config)
+            final_decision = confirmed_decision
+            step_payload["confirmation_decision"] = confirmed_decision.to_dict()
+            if confirmed_decision.action == "grab":
+                execute_grab_decision_from_args(robot, confirmed_decision, args)
+                break
+            execute_grab_decision_from_args(robot, confirmed_decision, args)
+            if confirmed_decision.action == "stop":
+                break
+            continue
         execute_grab_decision_from_args(robot, decision, args)
         if decision.action == "stop":
             break
@@ -212,6 +221,7 @@ def analyze_and_approach_grab(image_path: Path, detections: list[Detection], arg
         config=GrabApproachConfig(
             center_tolerance_px=args.grab_center_tolerance,
             ready_area_ratio=args.grab_ready_area_ratio,
+            area_tolerance_ratio=args.grab_area_tolerance_ratio,
             too_close_area_ratio=args.grab_too_close_area_ratio,
             ready_center_y_ratio=args.grab_ready_center_y_ratio,
             center_y_tolerance_ratio=args.grab_center_y_tolerance_ratio,
@@ -244,6 +254,30 @@ def analyze_and_approach_grab(image_path: Path, detections: list[Detection], arg
         args.json.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     return 0
+
+
+def confirm_grab_decision(
+    capture_path: Path,
+    detector: RedTargetDetector,
+    args: argparse.Namespace,
+    config: GrabApproachConfig,
+):
+    decision = None
+    for _ in range(args.grab_confirm_frames):
+        capture_camera_frame(capture_path, warmup_seconds=args.grab_confirm_warmup)
+        detections = detector.detect(capture_path)
+        image_width, image_height = read_image_size(capture_path)
+        target = select_grab_target(detections, confidence_threshold=args.confidence_threshold)
+        decision = decide_grab_step(target, image_width=image_width, image_height=image_height, config=config)
+        if decision.action != "grab":
+            return decision
+    if decision is None:
+        capture_camera_frame(capture_path, warmup_seconds=args.grab_confirm_warmup)
+        detections = detector.detect(capture_path)
+        image_width, image_height = read_image_size(capture_path)
+        target = select_grab_target(detections, confidence_threshold=args.confidence_threshold)
+        decision = decide_grab_step(target, image_width=image_width, image_height=image_height, config=config)
+    return decision
 
 
 def execute_grab_decision_from_args(robot: DryRunRobot | DogzillaRobot, decision, args: argparse.Namespace) -> None:
@@ -343,25 +377,28 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--seconds", type=float, default=0.5)
     parser.add_argument("--crouch-height", type=int, default=15)
     parser.add_argument("--crouch-action-id", type=int)
-    parser.add_argument("--grab-open-claw", type=int, default=5)
-    parser.add_argument("--grab-close-claw", type=int, default=245)
-    parser.add_argument("--grab-reach-radius", type=int, default=200)
-    parser.add_argument("--grab-reach-height", type=int, default=130)
-    parser.add_argument("--grab-lift-radius", type=int, default=90)
+    parser.add_argument("--grab-open-claw", type=int, default=0)
+    parser.add_argument("--grab-close-claw", type=int, default=210)
+    parser.add_argument("--grab-reach-radius", type=int, default=133)
+    parser.add_argument("--grab-reach-height", type=int, default=-44)
+    parser.add_argument("--grab-lift-radius", type=int, default=55)
     parser.add_argument("--grab-lift-height", type=int, default=100)
     grab_approach_group = parser.add_mutually_exclusive_group()
     grab_approach_group.add_argument("--grab-approach", dest="grab_approach", action="store_true", default=True)
     grab_approach_group.add_argument("--no-grab-approach", dest="grab_approach", action="store_false")
     parser.add_argument("--grab-max-steps", type=int, default=12)
     parser.add_argument("--grab-center-tolerance", type=int, default=35)
-    parser.add_argument("--grab-ready-area-ratio", type=float, default=0.025)
-    parser.add_argument("--grab-too-close-area-ratio", type=float, default=0.09)
+    parser.add_argument("--grab-ready-area-ratio", type=float, default=0.078)
+    parser.add_argument("--grab-area-tolerance-ratio", type=float, default=0.008)
+    parser.add_argument("--grab-too-close-area-ratio", type=float, default=0.095)
     parser.add_argument("--grab-ready-center-y-ratio", type=float, default=0.86)
     parser.add_argument("--grab-center-y-tolerance-ratio", type=float, default=0.02)
     parser.add_argument("--grab-approach-speed", type=int, default=10)
     parser.add_argument("--grab-approach-seconds", type=float, default=1.0)
     parser.add_argument("--grab-align-speed", type=int, default=6)
     parser.add_argument("--grab-align-seconds", type=float, default=0.7)
+    parser.add_argument("--grab-confirm-frames", type=int, default=1)
+    parser.add_argument("--grab-confirm-warmup", type=float, default=0.25)
     parser.add_argument("--annotated", type=Path)
     parser.add_argument("--json", type=Path)
 

@@ -5,6 +5,15 @@ import time
 from typing import Any
 
 
+GRAB_BODY_HEIGHT = 75
+GRAB_BODY_PITCH = 15
+GRAB_READY_MOTOR = (19, 6)
+CALIBRATED_GRAB_MOTOR = (-12, 78)
+GRAB_LIFT_MOTOR = (20, -20)
+GRAB_REST_MOTOR = (-13, -20)
+ARM_MOTOR_IDS = [52, 53]
+
+
 class DryRunRobot:
     """Robot adapter used on a laptop. It records actions instead of moving."""
 
@@ -28,11 +37,11 @@ class DryRunRobot:
 
     def grab(
         self,
-        open_claw: int = 5,
-        close_claw: int = 245,
-        reach_radius: int = 200,
-        reach_height: int = 130,
-        lift_radius: int = 90,
+        open_claw: int = 0,
+        close_claw: int = 210,
+        reach_radius: int = 133,
+        reach_height: int = -44,
+        lift_radius: int = 55,
         lift_height: int = 100,
     ) -> None:
         self.events.append(
@@ -44,6 +53,12 @@ class DryRunRobot:
                 "reach_height": reach_height,
                 "lift_radius": lift_radius,
                 "lift_height": lift_height,
+                "body_height": GRAB_BODY_HEIGHT,
+                "body_pitch": GRAB_BODY_PITCH,
+                "motor_ready": GRAB_READY_MOTOR,
+                "motor_grab": CALIBRATED_GRAB_MOTOR,
+                "motor_lift": GRAB_LIFT_MOTOR,
+                "motor_rest": GRAB_REST_MOTOR,
             }
         )
 
@@ -111,22 +126,25 @@ class DogzillaRobot:
 
     def grab(
         self,
-        open_claw: int = 5,
-        close_claw: int = 245,
-        reach_radius: int = 200,
-        reach_height: int = 130,
-        lift_radius: int = 90,
+        open_claw: int = 0,
+        close_claw: int = 210,
+        reach_radius: int = 133,
+        reach_height: int = -44,
+        lift_radius: int = 55,
         lift_height: int = 100,
     ) -> None:
-        self._require_call("translation", "z", 10)
-        self._require_call("attitude", "p", 15)
+        self._require_call("translation", ["z"], [GRAB_BODY_HEIGHT])
+        self._require_call("attitude", ["p"], [GRAB_BODY_PITCH])
+        self._call_if_exists("pace", "slow")
         self._require_call("claw", open_claw)
         time.sleep(1.0)
-        self._require_call("arm_polar", reach_radius, reach_height)
-        time.sleep(2.0)
-        self._require_call("claw", close_claw)
-        time.sleep(1.0)
-        self._require_call("arm_polar", lift_radius, lift_height)
+        used_calibrated_motor = self._calibrated_motor_grab(close_claw)
+        if not used_calibrated_motor:
+            self._move_arm(reach_radius, reach_height)
+            time.sleep(2.0)
+            self._require_call("claw", close_claw)
+            time.sleep(1.0)
+            self._move_arm(lift_radius, lift_height)
         self.events.append(
             {
                 "action": "grab",
@@ -136,6 +154,13 @@ class DogzillaRobot:
                 "reach_height": reach_height,
                 "lift_radius": lift_radius,
                 "lift_height": lift_height,
+                "body_height": GRAB_BODY_HEIGHT,
+                "body_pitch": GRAB_BODY_PITCH,
+                "motor_ready": GRAB_READY_MOTOR,
+                "motor_grab": CALIBRATED_GRAB_MOTOR,
+                "motor_lift": GRAB_LIFT_MOTOR,
+                "motor_rest": GRAB_REST_MOTOR,
+                "used_calibrated_motor": used_calibrated_motor,
             }
         )
 
@@ -157,6 +182,37 @@ class DogzillaRobot:
         if not callable(method):
             raise RuntimeError(f"DOGZILLA object does not provide {method_name}()")
         method(*args)
+
+    def _move_arm(self, reach: int, height: int) -> None:
+        arm_polar = getattr(self.dog, "arm_polar", None)
+        if callable(arm_polar):
+            arm_polar(reach, height)
+            return
+
+        arm = getattr(self.dog, "arm", None)
+        if callable(arm):
+            arm(reach, height)
+            return
+
+        raise RuntimeError("DOGZILLA object does not provide arm_polar() or arm()")
+
+    def _calibrated_motor_grab(self, close_claw: int) -> bool:
+        motor = getattr(self.dog, "motor", None)
+        if not callable(motor):
+            return False
+
+        motor(ARM_MOTOR_IDS, list(GRAB_READY_MOTOR))
+        time.sleep(0.5)
+        motor(ARM_MOTOR_IDS, list(CALIBRATED_GRAB_MOTOR))
+        time.sleep(2.0)
+        self._require_call("claw", close_claw)
+        time.sleep(1.5)
+        motor(ARM_MOTOR_IDS, list(GRAB_LIFT_MOTOR))
+        time.sleep(0.5)
+        self._require_call("attitude", ["p"], [0])
+        time.sleep(0.5)
+        motor(ARM_MOTOR_IDS, list(GRAB_REST_MOTOR))
+        return True
 
 
 def load_default_dog() -> Any:

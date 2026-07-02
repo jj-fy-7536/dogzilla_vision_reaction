@@ -17,11 +17,11 @@ class GrabRobot(Protocol):
 
     def grab(
         self,
-        open_claw: int = 5,
-        close_claw: int = 245,
-        reach_radius: int = 200,
-        reach_height: int = 130,
-        lift_radius: int = 90,
+        open_claw: int = 0,
+        close_claw: int = 210,
+        reach_radius: int = 133,
+        reach_height: int = -44,
+        lift_radius: int = 55,
         lift_height: int = 100,
     ) -> None: ...
 
@@ -31,8 +31,9 @@ class GrabRobot(Protocol):
 @dataclass(frozen=True)
 class GrabApproachConfig:
     center_tolerance_px: int = 35
-    ready_area_ratio: float = 0.025
-    too_close_area_ratio: float = 0.09
+    ready_area_ratio: float = 0.078
+    area_tolerance_ratio: float = 0.008
+    too_close_area_ratio: float = 0.095
     ready_center_y_ratio: float = 0.86
     center_y_tolerance_ratio: float = 0.02
 
@@ -73,23 +74,12 @@ def decide_grab_step(
     center_y_ratio = center_y / image_height
     image_center_x = image_width / 2
     area_ratio = detection.area_ratio
+    bottom_clipped = detection.bbox.y + detection.bbox.height >= image_height - 2
 
-    if area_ratio > config.too_close_area_ratio or center_y_ratio > (
-        config.ready_center_y_ratio + config.center_y_tolerance_ratio
-    ):
+    if area_ratio > config.too_close_area_ratio or bottom_clipped:
         return GrabApproachDecision(
             action="backward",
             reason="target_too_close",
-            target_center_x=center_x,
-            target_center_y=center_y,
-            target_center_y_ratio=center_y_ratio,
-            target_area_ratio=area_ratio,
-        )
-
-    if center_y_ratio < config.ready_center_y_ratio - config.center_y_tolerance_ratio:
-        return GrabApproachDecision(
-            action="forward",
-            reason="target_too_far",
             target_center_x=center_x,
             target_center_y=center_y,
             target_center_y_ratio=center_y_ratio,
@@ -110,6 +100,29 @@ def decide_grab_step(
         return GrabApproachDecision(
             action="right",
             reason="target_right_of_center",
+            target_center_x=center_x,
+            target_center_y=center_y,
+            target_center_y_ratio=center_y_ratio,
+            target_area_ratio=area_ratio,
+        )
+
+    calibrated_min_area = config.ready_area_ratio - config.area_tolerance_ratio
+    calibrated_max_area = config.ready_area_ratio + config.area_tolerance_ratio
+
+    if area_ratio > calibrated_max_area:
+        return GrabApproachDecision(
+            action="backward",
+            reason="target_too_close",
+            target_center_x=center_x,
+            target_center_y=center_y,
+            target_center_y_ratio=center_y_ratio,
+            target_area_ratio=area_ratio,
+        )
+
+    if area_ratio < calibrated_min_area:
+        return GrabApproachDecision(
+            action="forward",
+            reason="target_too_far",
             target_center_x=center_x,
             target_center_y=center_y,
             target_center_y_ratio=center_y_ratio,
@@ -151,11 +164,11 @@ def execute_grab_decision(
     approach_seconds: float,
     align_speed: int,
     align_seconds: float,
-    open_claw: int = 5,
-    close_claw: int = 245,
-    reach_radius: int = 200,
-    reach_height: int = 130,
-    lift_radius: int = 90,
+    open_claw: int = 0,
+    close_claw: int = 210,
+    reach_radius: int = 133,
+    reach_height: int = -44,
+    lift_radius: int = 55,
     lift_height: int = 100,
 ) -> None:
     if decision.action == "forward":
