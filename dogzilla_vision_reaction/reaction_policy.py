@@ -11,7 +11,7 @@ VALID_ACTIONS = {"forward", "crouch"}
 @dataclass(frozen=True)
 class ReactionConfig:
     target_label: str = "red_target"
-    confidence_threshold: float = 0.50
+    confidence_threshold: float = 0.30
     action: str = "forward"
 
     def __post_init__(self) -> None:

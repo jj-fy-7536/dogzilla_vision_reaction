@@ -14,10 +14,10 @@ class RedTargetDetector:
 
     def __init__(
         self,
-        min_area_ratio: float = 0.01,
-        min_red: int = 120,
-        dominance_delta: int = 50,
-        confidence_full_area_ratio: float = 0.18,
+        min_area_ratio: float = 0.003,
+        min_red: int = 100,
+        dominance_delta: int = 25,
+        confidence_full_area_ratio: float = 0.02,
     ) -> None:
         if min_area_ratio < 0:
             raise ValueError("min_area_ratio must be non-negative")

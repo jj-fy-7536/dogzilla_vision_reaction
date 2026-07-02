@@ -167,8 +167,11 @@ python3 -m dogzilla_vision_reaction.cli hardware stream \
 
 ## 3. 参数说明
 
-- `--min-area-ratio`: 红色区域至少占画面的比例，默认 `0.01`。误检多就调大。
-- `--confidence-threshold`: 触发动作的最低置信度，默认 `0.50`。机器狗误动就调高。
+- `--min-area-ratio`: 红色区域至少占画面的比例，默认 `0.003`。误检多就调大。
+- `--confidence-threshold`: 触发动作的最低置信度，默认 `0.30`。机器狗误动就调高。
+- `--min-red`: 红色通道最低值，默认 `100`。环境偏暗时可调低。
+- `--dominance-delta`: 红色比绿色/蓝色至少高多少，默认 `25`。误检多就调高。
+- `--confidence-full-area-ratio`: 目标占画面多少时视为满置信度，默认 `0.02`。
 - `--action`: 触发动作，支持 `forward` 或 `crouch`。
 - `--live`: 真正控制机器狗。没有这个参数只做 dry-run。
 - `--forward-speed`: 向前速度，默认 `8`，建议第一次别调太大。

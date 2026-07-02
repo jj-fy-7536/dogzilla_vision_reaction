@@ -32,6 +32,21 @@ class VisionReactionTests(unittest.TestCase):
         self.assertEqual(detections[0].bbox, BoundingBox(x=60, y=35, width=45, height=45))
         self.assertGreater(detections[0].confidence, 0.5)
 
+    def test_red_detector_defaults_find_small_camera_red_ball(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = Path(tmp) / "camera_ball.jpg"
+            image = Image.new("RGB", (640, 480), "white")
+            for x in range(307, 352):
+                for y in range(343, 404):
+                    image.putpixel((x, y), (225, 35, 40))
+            image.save(image_path)
+
+            detections = RedTargetDetector().detect(image_path)
+
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(detections[0].bbox, BoundingBox(x=307, y=343, width=45, height=61))
+        self.assertGreater(detections[0].confidence, 0.3)
+
     def test_policy_triggers_forward_above_threshold(self):
         detection = Detection(
             label="red_target",
@@ -46,6 +61,20 @@ class VisionReactionTests(unittest.TestCase):
         self.assertEqual(result.action, "forward")
         self.assertEqual(result.reason, "target_detected")
         self.assertEqual(result.detection, detection)
+
+    def test_policy_default_threshold_triggers_small_camera_target(self):
+        detection = Detection(
+            label="red_target",
+            confidence=0.35,
+            bbox=BoundingBox(307, 343, 45, 61),
+            area_ratio=0.0069,
+            image_path="camera_ball.jpg",
+        )
+
+        result = choose_reaction([detection], ReactionConfig(action="forward"))
+
+        self.assertEqual(result.action, "forward")
+        self.assertEqual(result.reason, "target_detected")
 
     def test_policy_does_not_move_below_threshold(self):
         detection = Detection(

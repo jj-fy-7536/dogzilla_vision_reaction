@@ -85,7 +85,12 @@ def run_hardware_stream(args: argparse.Namespace) -> int:
 
 
 def analyze_and_react(image_path: Path, args: argparse.Namespace) -> int:
-    detector = RedTargetDetector(min_area_ratio=args.min_area_ratio)
+    detector = RedTargetDetector(
+        min_area_ratio=args.min_area_ratio,
+        min_red=args.min_red,
+        dominance_delta=args.dominance_delta,
+        confidence_full_area_ratio=args.confidence_full_area_ratio,
+    )
     detections = detector.detect(image_path)
     reaction = choose_reaction(
         detections,
@@ -168,8 +173,11 @@ def capture_camera_frame(output_path: Path, warmup_seconds: float = 1.0) -> None
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--action", choices=("forward", "crouch"), default="forward")
-    parser.add_argument("--min-area-ratio", type=float, default=0.01)
-    parser.add_argument("--confidence-threshold", type=float, default=0.50)
+    parser.add_argument("--min-area-ratio", type=float, default=0.003)
+    parser.add_argument("--confidence-threshold", type=float, default=0.30)
+    parser.add_argument("--min-red", type=int, default=100)
+    parser.add_argument("--dominance-delta", type=int, default=25)
+    parser.add_argument("--confidence-full-area-ratio", type=float, default=0.02)
     parser.add_argument("--live", action="store_true", help="control the real robot instead of dry-run")
     parser.add_argument("--forward-speed", type=int, default=8)
     parser.add_argument("--seconds", type=float, default=0.5)
