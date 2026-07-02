@@ -125,6 +125,26 @@ python3 -m dogzilla_vision_reaction.cli camera \
   --annotated demo/red_ball_annotated.jpg
 ```
 
+真实抓取默认会先做靠近/对齐，再执行机械臂抓取：
+
+- 红球偏左或偏右：先小步横移对齐。
+- 红球面积太小：先小步前进。
+- 红球过近：先小步后退。
+- 红球居中且足够近：执行 `grab` 机械臂动作。
+
+可以调这些参数：
+
+```bash
+python3 -m dogzilla_vision_reaction.cli camera \
+  --action grab \
+  --live \
+  --grab-max-steps 12 \
+  --grab-ready-area-ratio 0.025 \
+  --grab-center-tolerance 45 \
+  --grab-approach-speed 6 \
+  --grab-approach-seconds 0.3
+```
+
 ### 2.1 基础硬件验收
 
 这些命令对应官网里的基础能力：运动控制、播放声音、摄像头视频/图传。建议先 dry-run，再 live。
@@ -200,6 +220,11 @@ python3 -m dogzilla_vision_reaction.cli hardware stream \
 - `--min-red`: 红色通道最低值，默认 `100`。环境偏暗时可调低。
 - `--dominance-delta`: 红色比绿色/蓝色至少高多少，默认 `25`。误检多就调高。
 - `--confidence-full-area-ratio`: 目标占画面多少时视为满置信度，默认 `0.02`。
+- `--grab-approach` / `--no-grab-approach`: 开启或关闭抓取前的自动靠近/对齐。默认开启。
+- `--grab-center-tolerance`: 红球中心允许偏离画面中心多少像素，默认 `45`。
+- `--grab-ready-area-ratio`: 抓取前红球需要占画面的最小比例，默认 `0.025`。抓不到通常调大一点，让狗再靠近。
+- `--grab-too-close-area-ratio`: 红球占画面比例超过这个值时先后退，默认 `0.09`。
+- `--grab-max-steps`: 抓取前最多靠近/对齐几步，默认 `12`。
 - `--action`: 触发动作，支持 `forward`、`crouch` 或 `grab`。
 - `--live`: 真正控制机器狗。没有这个参数只做 dry-run。
 - `--forward-speed`: 向前速度，默认 `8`，建议第一次别调太大。

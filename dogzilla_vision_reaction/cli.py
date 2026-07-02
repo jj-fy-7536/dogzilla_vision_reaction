@@ -7,7 +7,15 @@ import sys
 import time
 from pathlib import Path
 
+from PIL import Image
+
 from .annotate import annotate_image
+from .grab_approach import (
+    GrabApproachConfig,
+    decide_grab_step,
+    execute_grab_decision,
+    select_grab_target,
+)
 from .hardware_checks import (
     SyntheticFrameProvider,
     build_stream_urls,
@@ -21,6 +29,7 @@ from .hardware_checks import (
 from .reaction_policy import ReactionConfig, choose_reaction
 from .red_detector import RedTargetDetector
 from .robot import DogzillaRobot, DryRunRobot
+from .types import Detection
 
 
 def run_image(args: argparse.Namespace) -> int:
@@ -28,10 +37,75 @@ def run_image(args: argparse.Namespace) -> int:
 
 
 def run_camera(args: argparse.Namespace) -> int:
+    if args.action == "grab" and args.live and args.grab_approach:
+        return run_camera_grab_approach(args)
+
     capture_path = args.capture_output
     capture_path.parent.mkdir(parents=True, exist_ok=True)
     capture_camera_frame(capture_path, warmup_seconds=args.camera_warmup)
     return analyze_and_react(capture_path, args)
+
+
+def run_camera_grab_approach(args: argparse.Namespace) -> int:
+    capture_path = args.capture_output
+    capture_path.parent.mkdir(parents=True, exist_ok=True)
+    detector = build_detector(args)
+    robot = build_robot(args)
+    install_sigint_stop(robot)
+    config = GrabApproachConfig(
+        center_tolerance_px=args.grab_center_tolerance,
+        ready_area_ratio=args.grab_ready_area_ratio,
+        too_close_area_ratio=args.grab_too_close_area_ratio,
+    )
+    steps: list[dict[str, object]] = []
+    detections = []
+    final_decision = None
+
+    for step_index in range(args.grab_max_steps):
+        capture_camera_frame(capture_path, warmup_seconds=args.camera_warmup if step_index == 0 else 0.2)
+        detections = detector.detect(capture_path)
+        image_width, _ = read_image_size(capture_path)
+        target = select_grab_target(detections, confidence_threshold=args.confidence_threshold)
+        decision = decide_grab_step(target, image_width=image_width, config=config)
+        final_decision = decision
+        step_payload = {
+            "step": step_index + 1,
+            "decision": decision.to_dict(),
+            "detections": [detection.to_dict() for detection in detections],
+        }
+        steps.append(step_payload)
+
+        if decision.action == "grab":
+            execute_grab_decision_from_args(robot, decision, args)
+            break
+        execute_grab_decision_from_args(robot, decision, args)
+        if decision.action == "stop":
+            break
+
+    if args.annotated:
+        annotate_image(capture_path, detections, args.annotated)
+
+    reaction_action = final_decision.action if final_decision else "none"
+    reaction_reason = final_decision.reason if final_decision else "no_decision"
+    payload = {
+        "mode": "live",
+        "image_path": str(capture_path),
+        "detections": [detection.to_dict() for detection in detections],
+        "reaction": {
+            "action": reaction_action,
+            "reason": reaction_reason,
+            "grab_completed": reaction_action == "grab",
+        },
+        "approach_steps": steps,
+        "robot_events": getattr(robot, "events", []),
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    return 0
 
 
 def run_hardware_motion(args: argparse.Namespace) -> int:
@@ -85,13 +159,11 @@ def run_hardware_stream(args: argparse.Namespace) -> int:
 
 
 def analyze_and_react(image_path: Path, args: argparse.Namespace) -> int:
-    detector = RedTargetDetector(
-        min_area_ratio=args.min_area_ratio,
-        min_red=args.min_red,
-        dominance_delta=args.dominance_delta,
-        confidence_full_area_ratio=args.confidence_full_area_ratio,
-    )
+    detector = build_detector(args)
     detections = detector.detect(image_path)
+    if args.action == "grab" and args.grab_approach:
+        return analyze_and_approach_grab(image_path, detections, args)
+
     reaction = choose_reaction(
         detections,
         ReactionConfig(
@@ -126,6 +198,78 @@ def analyze_and_react(image_path: Path, args: argparse.Namespace) -> int:
         args.json.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     return 0
+
+
+def analyze_and_approach_grab(image_path: Path, detections: list[Detection], args: argparse.Namespace) -> int:
+    target = select_grab_target(detections, confidence_threshold=args.confidence_threshold)
+    image_width, _ = read_image_size(image_path)
+    decision = decide_grab_step(
+        target,
+        image_width=image_width,
+        config=GrabApproachConfig(
+            center_tolerance_px=args.grab_center_tolerance,
+            ready_area_ratio=args.grab_ready_area_ratio,
+            too_close_area_ratio=args.grab_too_close_area_ratio,
+        ),
+    )
+
+    robot = build_robot(args)
+    install_sigint_stop(robot)
+    execute_grab_decision_from_args(robot, decision, args)
+
+    if args.annotated:
+        annotate_image(image_path, detections, args.annotated)
+
+    payload = {
+        "mode": "live" if args.live else "dry-run",
+        "image_path": str(image_path),
+        "detections": [detection.to_dict() for detection in detections],
+        "reaction": {
+            "action": decision.action,
+            "reason": decision.reason,
+            "grab_completed": decision.action == "grab",
+        },
+        "grab_approach_decision": decision.to_dict(),
+        "robot_events": getattr(robot, "events", []),
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    return 0
+
+
+def execute_grab_decision_from_args(robot: DryRunRobot | DogzillaRobot, decision, args: argparse.Namespace) -> None:
+    execute_grab_decision(
+        robot,
+        decision,
+        approach_speed=args.grab_approach_speed,
+        approach_seconds=args.grab_approach_seconds,
+        align_speed=args.grab_align_speed,
+        align_seconds=args.grab_align_seconds,
+        open_claw=args.grab_open_claw,
+        close_claw=args.grab_close_claw,
+        reach_radius=args.grab_reach_radius,
+        reach_height=args.grab_reach_height,
+        lift_radius=args.grab_lift_radius,
+        lift_height=args.grab_lift_height,
+    )
+
+
+def build_detector(args: argparse.Namespace) -> RedTargetDetector:
+    return RedTargetDetector(
+        min_area_ratio=args.min_area_ratio,
+        min_red=args.min_red,
+        dominance_delta=args.dominance_delta,
+        confidence_full_area_ratio=args.confidence_full_area_ratio,
+    )
+
+
+def read_image_size(image_path: Path) -> tuple[int, int]:
+    with Image.open(image_path) as image:
+        return image.size
 
 
 def build_robot(args: argparse.Namespace) -> DryRunRobot | DogzillaRobot:
@@ -178,6 +322,8 @@ def capture_camera_frame(output_path: Path, warmup_seconds: float = 1.0) -> None
         camera.capture_file(str(output_path))
     finally:
         camera.stop()
+        if hasattr(camera, "close"):
+            camera.close()
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -198,6 +344,17 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--grab-reach-height", type=int, default=130)
     parser.add_argument("--grab-lift-radius", type=int, default=90)
     parser.add_argument("--grab-lift-height", type=int, default=100)
+    grab_approach_group = parser.add_mutually_exclusive_group()
+    grab_approach_group.add_argument("--grab-approach", dest="grab_approach", action="store_true", default=True)
+    grab_approach_group.add_argument("--no-grab-approach", dest="grab_approach", action="store_false")
+    parser.add_argument("--grab-max-steps", type=int, default=12)
+    parser.add_argument("--grab-center-tolerance", type=int, default=45)
+    parser.add_argument("--grab-ready-area-ratio", type=float, default=0.025)
+    parser.add_argument("--grab-too-close-area-ratio", type=float, default=0.09)
+    parser.add_argument("--grab-approach-speed", type=int, default=6)
+    parser.add_argument("--grab-approach-seconds", type=float, default=0.3)
+    parser.add_argument("--grab-align-speed", type=int, default=5)
+    parser.add_argument("--grab-align-seconds", type=float, default=0.2)
     parser.add_argument("--annotated", type=Path)
     parser.add_argument("--json", type=Path)
 
